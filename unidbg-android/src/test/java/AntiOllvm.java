@@ -21,22 +21,18 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.math.BigInteger;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Locale;
-import java.util.Stack;
+import java.util.*;
 
 public class AntiOllvm {
     private AndroidEmulator emulator;
     private VM vm;
     private DalvikModule dm;
     private Module module;
-    private long start= 0x61F14;
-    private long end = 0x6232C;
+
     private Stack<InsAndCtx> instructions;
     private List<PatchIns> patchs;
-    private static final String inName = "/home/t/Desktop/deollvm/libtprt.so";
-    private static final String outName = "/home/t/Desktop/deollvm/libtprt6.so";
+    private static final String inName = "/home/t/Desktop/unidbg/unidbg_libs/libtprt.so";
+    private static final String outName = "/home/t/Desktop/unidbg/unidbg_libs/libtprt6.so";
     private static final long dispatcher = 0x5E46C;
     private static final long toend = 0x5E6BC;
     //记录真实块
@@ -66,17 +62,17 @@ public class AntiOllvm {
         vm = emulator.createDalvikVM();
         vm.setVerbose(true);
         //加载动态库
-        vm.loadLibrary(new File("/home/t/Desktop/deollvm/lib64/libc.so"),false);
-        vm.loadLibrary(new File("/home/t/Desktop/deollvm/lib64/libm.so"),false);
-        vm.loadLibrary(new File("/home/t/Desktop/deollvm/lib64/libstdc++.so"),false);
-        vm.loadLibrary(new File("/home/t/Desktop/deollvm/lib64/ld-android.so"),false);
-        vm.loadLibrary(new File("/home/t/Desktop/deollvm/lib64/libdl.so"),false);
+        vm.loadLibrary(new File("/home/t/Desktop/unidbg/unidbg_libs/lib64/libc.so"),false);
+        vm.loadLibrary(new File("/home/t/Desktop/unidbg/unidbg_libs/lib64/libm.so"),false);
+        vm.loadLibrary(new File("/home/t/Desktop/unidbg/unidbg_libs/lib64/libstdc++.so"),false);
+        vm.loadLibrary(new File("/home/t/Desktop/unidbg/unidbg_libs/lib64/ld-android.so"),false);
+        vm.loadLibrary(new File("/home/t/Desktop/unidbg/unidbg_libs/lib64/libdl.so"),false);
         dm = vm.loadLibrary(new File(inName), false);
         module = dm.getModule();
-        processFlt();
+        //processFlt(0x61F14, 0x6232C);
     }
 
-    public void logIns()
+    public void logIns(long start, long end)
     {
         emulator.getBackend().hook_add_new(new CodeHook() {
             @Override
@@ -108,8 +104,10 @@ public class AntiOllvm {
 
     public static void main(String[] args) {
         AntiOllvm ao = new AntiOllvm();
-        ao.logIns();
+       // ao.logIns();
+        ao.processBr(0x61F14, 0x6232C);
         ao.callJniOnload();
+        ao.patch();
 
         //ao.reorderblock();
         //ao.patch();
@@ -118,6 +116,11 @@ public class AntiOllvm {
     //保存指令和寄存器环境类：
     class InsAndCtx
     {
+        public InsAndCtx(long addr, Instruction ins, List<Number> regs){
+            this.addr = addr;
+            this.ins = ins;
+            this.regs = regs;
+        }
         long addr;
         Instruction ins;
         List<Number> regs;
@@ -126,20 +129,9 @@ public class AntiOllvm {
             return addr;
         }
 
-        public void setAddr(long addr) {
-            this.addr = addr;
-        }
-
-        public void setIns(Instruction ins) {
-            this.ins = ins;
-        }
 
         public Instruction getIns() {
             return ins;
-        }
-
-        public void setRegs(List<Number> regs) {
-            this.regs = regs;
         }
 
         public List<Number> getRegs() {
@@ -156,17 +148,15 @@ public class AntiOllvm {
             return addr;
         }
 
-        public void setAddr(long addr) {
+        PatchIns(long addr, String ins){
             this.addr = addr;
+            this.ins  = ins;
         }
-
         public String getIns() {
             return ins;
         }
 
-        public void setIns(String ins) {
-            this.ins = ins;
-        }
+
     }
 
     public List<Number> saveRegs(Backend bk)
@@ -180,7 +170,7 @@ public class AntiOllvm {
         nb.add(bk.reg_read(Arm64Const.UC_ARM64_REG_LR));
         return nb;
     }
-    public Number getRegValue(String reg,List<Number> regsaved)
+    public Number getRegValue(String reg, List<Number> regsaved)
     {
         if(reg.equals("xzr"))
         {
@@ -207,6 +197,7 @@ public class AntiOllvm {
 
     public void patch()
     {
+        System.out.println("size:" + instructions.size());
         try {
             File f = new File(inName);
             FileInputStream fis = new FileInputStream(f);
@@ -215,7 +206,7 @@ public class AntiOllvm {
             fis.close();
             for(PatchIns pi:patchs)
             {
-                System.out.println("procrss addr:"+Integer.toHexString((int) pi.addr)+",code:"+pi.getIns());
+                //System.out.println("procrss addr:"+Integer.toHexString((int) pi.addr)+",code:"+pi.getIns());
                 Keystone ks = new Keystone(KeystoneArchitecture.Arm64, KeystoneMode.LittleEndian);
                 KeystoneEncoded assemble = ks.assemble(pi.getIns());
                 for(int i=0;i<assemble.getMachineCode().length;i++)
@@ -224,10 +215,10 @@ public class AntiOllvm {
                 }
             }
             File fo = new File(outName);
-            FileOutputStream fos = new FileOutputStream(fo);
-            fos.write(data);
-            fos.flush();
-            fos.close();
+//            FileOutputStream fos = new FileOutputStream(fo);
+//            fos.write(data);
+//            fos.flush();
+//            fos.close();
             System.out.println("finish");
         }
         catch (Exception e)
@@ -318,7 +309,7 @@ public class AntiOllvm {
             return 0;
         }
     }
-    public void processFlt()
+    public void processFlt(long start, long end)
     {
         emulator.getBackend().hook_add_new(new CodeHook() {
             @Override
@@ -326,11 +317,8 @@ public class AntiOllvm {
                 Capstone capstone = new Capstone(Capstone.CS_ARCH_ARM64,Capstone.CS_MODE_ARM);
                 byte[] bytes = emulator.getBackend().mem_read(address, 4);
                 Instruction[] disasm = capstone.disasm(bytes, 0);
-                InsAndCtx iac = new InsAndCtx();
-                iac.setIns(disasm[0]);
-                iac.setRegs(saveRegs(backend));
-                iac.setAddr(address);
-                instructions.add(iac);
+
+                instructions.add(new InsAndCtx(address, disasm[0], saveRegs(backend)));
                 do_processflt();
             }
 
@@ -456,146 +444,107 @@ public class AntiOllvm {
         {
             String ins1 = "b" + sb.getCond() + " 0x"+Integer.toHexString((int) (getIndexAddr(sb.getTrueindex()) -  sb.getInsaddr()));
             String ins2 = "b 0x"+ Integer.toHexString((int) (getIndexAddr(sb.getFalseindex())-sb.getInsaddr()-4));
-            PatchIns pi1 = new PatchIns();
-            pi1.setIns(ins1);
-            pi1.setAddr(sb.getInsaddr());
-            PatchIns pi2 = new PatchIns();
-            pi2.setIns(ins2);
-            pi2.setAddr(sb.getInsaddr() + 4);
-            patchs.add(pi1);
-            patchs.add(pi2);
+            patchs.add(new PatchIns(sb.getInsaddr(), ins1));
+            patchs.add(new PatchIns(sb.getInsaddr() + 4, ins2));
         }
 
-        PatchIns pi = new PatchIns();
-        pi.setAddr(dispatcher);
-        pi.setIns("b 0x"+Integer.toHexString((int) (getIndexAddr(0x22f0693f)-dispatcher)));
-        patchs.add(pi);
-        PatchIns pie = new PatchIns();
-        pie.setAddr(toend);
-        pie.setIns("b 0x"+Integer.toHexString((int) (getIndexAddr(0x83a9af56L)- toend)));
-        patchs.add(pie);
-        PatchIns pie1 = new PatchIns();
-        pie1.setAddr(0x5E674L);
-        pie1.setIns("b 0x"+Integer.toHexString((int) (getIndexAddr(0x83a9af56L) - 0x5E674L)));
-        patchs.add(pie1);
+//        PatchIns pi = new PatchIns();
+//        pi.setAddr(dispatcher);
+//        pi.setIns("b 0x"+Integer.toHexString((int) (getIndexAddr(0x22f0693f)-dispatcher)));
+//        patchs.add(pi);
+//        PatchIns pie = new PatchIns();
+//        pie.setAddr(toend);
+//        pie.setIns("b 0x"+Integer.toHexString((int) (getIndexAddr(0x83a9af56L)- toend)));
+//        patchs.add(pie);
+//        PatchIns pie1 = new PatchIns();
+//        pie1.setAddr(0x5E674L);
+//        pie1.setIns("b 0x"+Integer.toHexString((int) (getIndexAddr(0x83a9af56L) - 0x5E674L)));
+//        patchs.add(pie1);
     }
 
     public void do_processbr()
     {
         Instruction ins = instructions.peek().getIns();
 
-        if(instructions.peek().getAddr() - module.base == 0x5E770)
+        /*if(instructions.peek().getAddr() - module.base == 0x5E770)
         {
             emulator.getBackend().reg_write(Arm64Const.UC_ARM64_REG_W8,0);
-        }
+        }*/
         /*if(instructions.peek().getAddr() - module.base == 0x5E704)
         {
             emulator.getBackend().reg_write(Arm64Const.UC_ARM64_REG_W0,1);
         }*/
 
-
-        if(ins.getMnemonic().equals("br") && ins.getOpStr().equals("x9"))
-        {
+        if(ins.toString().equals("br x9")) {
+            long br_ins_addr = instructions.peek().getAddr() - module.base;
             boolean finish = false;
             long base = -1;
-            long listoffset = -1;
-            long cond1 = -1;
-            long cond2 = -1;
+            long list_offset = -1;
+            long condT = -1;
+            long condF = -1;
             String cond = "";
-            long addinstaddr = -1;
-            long brinsaddr = instructions.peek().getAddr() - module.base;
-            long selectaddr = -1;
-            long ldaaddr = -1;
+            long add_inst_addr = -1;
+
+            long csel_inst_addr = -1;
+            long ldr_inst_addr = -1;
 
             try {
                 while (!finish && !instructions.empty())
                 {
                     instructions.pop();
                     ins = instructions.peek().getIns();
-                    if(ins.getMnemonic().toLowerCase(Locale.ROOT).equals("add"))
-                    {
-                        String[] split = ins.getOpStr().split(",");
-                        if(split.length == 3)
-                        {
-                            if(split[0].toLowerCase(Locale.ROOT).trim().equals("x9") && split[1].toLowerCase(Locale.ROOT).trim().equals("x9"))
-                            {
-                                String reg = split[2].trim().toLowerCase(Locale.ROOT);
-                                base = getRegValue(reg,instructions.peek().getRegs()).longValue();
-                                addinstaddr = instructions.peek().getAddr() - module.base;
-                            }
-                            else {
-                                break;
-                            }
-                        }
-                        else
-                        {
-                            break;
-                        }
+                    String mnemonic = ins.getMnemonic().toLowerCase(Locale.ROOT);
+
+                    //定位add 指令
+                    if(ins.toString().equals("add x9, x9, x24")) {
+                        base = getRegValue("x24", instructions.peek().getRegs()).longValue();
+                        add_inst_addr = instructions.peek().getAddr() - module.base;
                     }
 
-                    if(ins.getMnemonic().toLowerCase(Locale.ROOT).equals("ldr"))
-                    {
-                        String[] sp = ins.getOpStr().toLowerCase().split(",");
-                        if(sp.length == 3)
-                        {
-                            if(sp[0].trim().toLowerCase(Locale.ROOT).equals("x9") && sp[2].trim().toLowerCase(Locale.ROOT).equals("x9]"))
-                            {
-                                String reg = sp[1].toLowerCase(Locale.ROOT).trim().substring(1);
-                                listoffset = getRegValue(reg,instructions.peek().getRegs()).longValue()-module.base;
-                                ldaaddr =  instructions.peek().getAddr()- module.base;
-                            }
-                        }
+                    if(ins.toString().equals("ldr x9, [x19, x9]")) {
+                        list_offset = getRegValue("x19", instructions.peek().getRegs()).longValue() - module.base;
+                        ldr_inst_addr =  instructions.peek().getAddr()- module.base;
                     }
 
-                    if(ins.getMnemonic().trim().toLowerCase(Locale.ROOT).equals("csel"))
+
+                    //csel x9, x28, x23, lt
+                    if(mnemonic.equals("csel"))
                     {
                         String[] sp = ins.getOpStr().toLowerCase(Locale.ROOT).split(",");
                         if(sp.length == 4)
                         {
                             cond = sp[3].trim();
-                            if(sp[0].trim().equals("x9"))
-                            {
+                            if(sp[0].trim().equals("x9")) {
                                 String reg1 = sp[1].trim();
                                 String reg2 = sp[2].trim();
-                                cond1 = getRegValue(reg1,instructions.peek().getRegs()).longValue();
-                                cond2 = getRegValue(reg2,instructions.peek().getRegs()).longValue();
-                                selectaddr = instructions.peek().getAddr() - module.base;
+                                condT = getRegValue(reg1,instructions.peek().getRegs()).longValue();
+                                condF = getRegValue(reg2,instructions.peek().getRegs()).longValue();
+                                csel_inst_addr = instructions.peek().getAddr() - module.base;
                             }
                         }
                     }
 
                     if(ins.getMnemonic().trim().toLowerCase(Locale.ROOT).equals("cmp"))
                     {
-                        if(base == -1 || listoffset == -1 || cond1 == -1 || cond2 == -1 || cond.equals("") || addinstaddr == -1 || ldaaddr == -1 || selectaddr == -1)
+                        if(base == -1 || list_offset == -1 || condT == -1 || condF == -1 || cond.equals("") || add_inst_addr == -1 || ldr_inst_addr == -1 || csel_inst_addr == -1)
                         {
                             break;
                         }
                         else
                         {
-                            long offset1 = base + readInt64(emulator.getBackend(), module.base+listoffset+cond1) - module.base;
-                            long offset2 = base + readInt64(emulator.getBackend(),module.base+listoffset+cond2) - module.base;
-                            if( brinsaddr - addinstaddr != 4)
-                            {
+                            long offsetT = base + readInt64(emulator.getBackend(), module.base + list_offset + condT) - module.base;
+                            long offsetF = base + readInt64(emulator.getBackend(),module.base  + list_offset +  condF) - module.base;
+                            if( br_ins_addr - add_inst_addr != 4) {
                                 System.out.println("add ins and br ins gap more than 4 size,may make mistake");
                             }
-                            String condBr = "b"+cond.toLowerCase(Locale.ROOT) + " 0x"+ Integer.toHexString((int) (offset1 - addinstaddr));
-                            String br = "b 0x" + Integer.toHexString((int)(offset2 - brinsaddr));
-                            PatchIns pi1 = new PatchIns();
-                            pi1.setAddr(addinstaddr);
-                            pi1.setIns(condBr);
-                            patchs.add(pi1);
-                            PatchIns pi2 = new PatchIns();
-                            pi2.setAddr(brinsaddr);
-                            pi2.setIns(br);
-                            patchs.add(pi2);
-                            PatchIns pi3 = new PatchIns();
-                            pi3.setAddr(selectaddr);
-                            pi3.setIns("nop");
-                            patchs.add(pi3);
-                            PatchIns pi4 = new PatchIns();
-                            pi4.setAddr(ldaaddr);
-                            pi4.setIns("nop");
-                            patchs.add(pi4);
+
+                            String condBr = "b"+cond.toLowerCase(Locale.ROOT) + " 0x"+ Integer.toHexString((int) (offsetT - add_inst_addr));
+                            String br = "b 0x" + Integer.toHexString((int)(offsetF - br_ins_addr));
+
+                            patchs.add(new PatchIns(add_inst_addr, condBr));
+                            patchs.add(new PatchIns(br_ins_addr,br));
+                            patchs.add(new PatchIns(csel_inst_addr, "nop"));
+                            patchs.add(new PatchIns(ldr_inst_addr, "nop"));
                             finish = true;
                         }
                     }
@@ -603,22 +552,18 @@ public class AntiOllvm {
             }catch (Exception e) {
                 e.printStackTrace();
             }
+            System.out.println();
         }
     }
 
-    public void processBr()
-    {
+    public void processBr(long start, long end) {
         emulator.getBackend().hook_add_new(new CodeHook() {
             @Override
             public void hook(Backend backend, long address, int size, Object user) {
                 Capstone capstone = new Capstone(Capstone.CS_ARCH_ARM64,Capstone.CS_MODE_ARM);
                 byte[] bytes = emulator.getBackend().mem_read(address, 4);
                 Instruction[] disasm = capstone.disasm(bytes, 0);
-                InsAndCtx iac = new InsAndCtx();
-                iac.setIns(disasm[0]);
-                iac.setRegs(saveRegs(backend));
-                iac.setAddr(address);
-                instructions.push(iac);
+                instructions.add(new InsAndCtx(address, disasm[0], saveRegs(backend)));
                 do_processbr();
             }
 
